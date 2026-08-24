@@ -61,4 +61,4 @@ If you find a bug or want to add something, open an issue or just send a PR. Not
 
 ## License
 
-MIT — do what you want with it, just don't blame me if something breaks.
+MIT 
