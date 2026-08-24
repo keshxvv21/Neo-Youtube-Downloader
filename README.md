@@ -27,8 +27,8 @@ Run `ffmpeg -version` in a terminal after installing — if it prints a version 
 ## Setup
 
 ```bash
-git clone https://github.com/yourusername/neo-yt-downloader.git
-cd neo-yt-downloader
+git clone https://github.com/keshxvv21/Neo-Youtube-Downloader.git
+cd Neo-Youtube-Downloader
 pip install -r requirements.txt
 python youtube_downloader.py
 ```
