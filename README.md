@@ -2,7 +2,7 @@
 
 A little desktop app for downloading YouTube videos, built with Python and yt-dlp. I wanted something that didn't look like every other Tkinter app from 2009, so it's styled in a neo-brutalist look — thick black borders, hard shadows, no gradients, no rounded corners.
 
-<img width="872" height="940" alt="Screenshot 2026-08-24 at 9 31 01 PM" src="https://github.com/user-attachments/assets/3f16de3c-0a42-449d-8244-9c5648a6c247" />
+<img width="400" height="500" alt="Screenshot 2026-08-24 at 9 31 01 PM" src="https://github.com/user-attachments/assets/3f16de3c-0a42-449d-8244-9c5648a6c247" />
 
 
 ## What it does
