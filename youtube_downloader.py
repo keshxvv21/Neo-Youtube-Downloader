@@ -41,6 +41,7 @@ from io import BytesIO
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from tkinter import font as tkfont
 
 try:
     import requests
@@ -66,17 +67,68 @@ BG      = "#F5F0E6"   # warm off-white background
 SURFACE = "#FFFFFF"   # card surface
 BLACK   = "#111111"
 YELLOW  = "#FFD23F"
+YELLOW_DARK = "#E8B923"   # hover shade for yellow buttons
 PINK    = "#FF6B9D"
 PURPLE  = "#9B7BFF"
+PURPLE_DARK = "#8362E8"
 GREEN   = "#4ADE80"
+GREEN_DARK = "#33C26B"
 RED     = "#FF5C5C"
+RED_DARK = "#E64444"
 BLUE    = "#5CC8FF"
+BLUE_DARK = "#3BB4EE"
+MUTED   = "#6B6B6B"       # secondary text, better contrast than #555 on off-white
+DISABLED_BG = "#D8D8D8"
+DISABLED_FG = "#8A8A8A"
 
-FONT_TITLE  = ("Arial Black", 20, "bold")
-FONT_HEAD   = ("Arial Black", 13, "bold")
-FONT_BODY   = ("Arial", 11)
-FONT_BODY_B = ("Arial", 11, "bold")
-FONT_MONO   = ("Consolas", 10)
+# ----------------------------------------------------------------------
+# ------------------------  FONT FALLBACK SYSTEM  ------------------------
+# ----------------------------------------------------------------------
+# "Arial Black" and "Consolas" only exist on Windows (and inconsistently
+# on macOS). On Linux, Tk silently substitutes a generic font when the
+# requested family is missing, which quietly breaks the intended look.
+# Instead of hardcoding, we pick the first available family per role from
+# an ordered list of good options for that role, resolved once a Tk root
+# exists (font.families() requires one).
+FONT_TITLE  = None
+FONT_HEAD   = None
+FONT_BODY   = None
+FONT_BODY_B = None
+FONT_MONO   = None
+FONT_SMALL  = None
+FONT_SMALL_B = None
+
+
+def _resolve_font(candidates, size, weight="normal", slant="roman"):
+    """Return the first available family from `candidates` as a font
+    tuple, falling back to Tk's generic 'TkDefaultFont' family if none
+    of the preferred choices are installed."""
+    available = set(tkfont.families())
+    for name in candidates:
+        if name in available:
+            return (name, size, weight) if slant == "roman" else (name, size, weight, slant)
+    # Last resort: still request the style, Tk will map it to a real font
+    return ("TkDefaultFont", size, weight)
+
+
+def setup_fonts():
+    """Must be called after a Tk root is created."""
+    global FONT_TITLE, FONT_HEAD, FONT_BODY, FONT_BODY_B, FONT_MONO, FONT_SMALL, FONT_SMALL_B
+
+    heavy_candidates = ["Arial Black", "Arial Bold", "Helvetica Bold",
+                        "Liberation Sans Bold", "DejaVu Sans Bold", "Segoe UI Black"]
+    body_candidates = ["Helvetica", "Arial", "Segoe UI", "Liberation Sans", "DejaVu Sans"]
+    mono_candidates = ["Consolas", "Menlo", "SF Mono", "DejaVu Sans Mono",
+                       "Liberation Mono", "Courier New"]
+
+    FONT_TITLE  = _resolve_font(heavy_candidates, 22, "bold")
+    FONT_HEAD   = _resolve_font(heavy_candidates, 13, "bold")
+    FONT_BODY   = _resolve_font(body_candidates, 11, "normal")
+    FONT_BODY_B = _resolve_font(body_candidates, 11, "bold")
+    FONT_MONO   = _resolve_font(mono_candidates, 10, "normal")
+    FONT_SMALL  = _resolve_font(body_candidates, 9, "normal")
+    FONT_SMALL_B = _resolve_font(body_candidates, 9, "bold")
+
 
 SHADOW_OFFSET = 5
 BORDER_WIDTH = 3
@@ -88,20 +140,23 @@ HISTORY_FILE = os.path.join(os.path.expanduser("~"), ".ytdl_neo_history.json")
 # ---------------------------  HELPER WIDGETS  --------------------------
 # ----------------------------------------------------------------------
 class NeoButton(tk.Canvas):
-    """Hard-shadow, thick-border neo-brutalist button."""
+    """Hard-shadow, thick-border neo-brutalist button with a hover state."""
 
-    def __init__(self, parent, text, command=None, bg=YELLOW, fg=BLACK,
-                 width=160, height=44, font=FONT_BODY_B, **kw):
+    def __init__(self, parent, text, command=None, bg=YELLOW, fg=BLACK, hover_bg=None,
+                 width=160, height=44, font=None, **kw):
         super().__init__(parent, width=width + SHADOW_OFFSET,
                          height=height + SHADOW_OFFSET,
                          bg=parent.cget("bg"), highlightthickness=0, **kw)
         self.command = command
         self.bg_color = bg
+        self.hover_color = hover_bg or bg
         self.fg_color = fg
         self.w = width
         self.h = height
         self.pressed = False
+        self.hovering = False
         self.disabled = False
+        font = font or FONT_BODY_B
 
         self.create_rectangle(SHADOW_OFFSET, SHADOW_OFFSET,
                               width + SHADOW_OFFSET, height + SHADOW_OFFSET,
@@ -113,7 +168,21 @@ class NeoButton(tk.Canvas):
 
         self.bind("<Button-1>", self._on_press)
         self.bind("<ButtonRelease-1>", self._on_release)
-        self.bind("<Enter>", lambda e: self.config(cursor="hand2" if not self.disabled else "arrow"))
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+
+    def _on_enter(self, _e):
+        if self.disabled:
+            return
+        self.hovering = True
+        self.config(cursor="hand2")
+        self.itemconfig(self.rect, fill=self.hover_color)
+
+    def _on_leave(self, _e):
+        if self.disabled:
+            return
+        self.hovering = False
+        self.itemconfig(self.rect, fill=self.bg_color)
 
     def _on_press(self, _e):
         if self.disabled:
@@ -133,14 +202,15 @@ class NeoButton(tk.Canvas):
 
     def set_enabled(self, enabled):
         self.disabled = not enabled
-        self.itemconfig(self.rect, fill=self.bg_color if enabled else "#CCCCCC")
-        self.itemconfig(self.label, fill=self.fg_color if enabled else "#888888")
+        self.itemconfig(self.rect, fill=self.bg_color if enabled else DISABLED_BG)
+        self.itemconfig(self.label, fill=self.fg_color if enabled else DISABLED_FG)
+        self.config(cursor="hand2" if enabled else "arrow")
 
 
 class NeoProgressBar(tk.Frame):
     """Thick-bordered, flat-fill progress bar."""
 
-    def __init__(self, parent, width=690, height=28, fill=GREEN, **kw):
+    def __init__(self, parent, width=690, height=30, fill=GREEN, **kw):
         super().__init__(parent, width=width, height=height, bg=SURFACE,
                          highlightbackground=BLACK, highlightthickness=BORDER_WIDTH, **kw)
         self.pack_propagate(False)
@@ -151,7 +221,7 @@ class NeoProgressBar(tk.Frame):
         self.canvas.pack(fill="both", expand=True)
         self.bar = self.canvas.create_rectangle(0, 0, 0, self.height, fill=fill, outline="")
         self.pct_text = self.canvas.create_text(self.width / 2, self.height / 2,
-                                                text="0%", font=("Arial", 9, "bold"), fill=BLACK)
+                                                text="0%", font=FONT_SMALL_B, fill=BLACK)
 
     def set_progress(self, pct, color=None):
         pct = max(0, min(100, pct))
@@ -163,15 +233,15 @@ class NeoProgressBar(tk.Frame):
         self.canvas.tag_raise(self.pct_text)
 
 
-def neo_label(parent, text, font=FONT_BODY, fg=BLACK, bg=None, **kw):
-    return tk.Label(parent, text=text, font=font, fg=fg,
+def neo_label(parent, text, font=None, fg=BLACK, bg=None, **kw):
+    return tk.Label(parent, text=text, font=font or FONT_BODY, fg=fg,
                     bg=bg if bg else parent.cget("bg"), **kw)
 
 
 def neo_entry(parent, textvariable=None, width=40, **kw):
     return tk.Entry(parent, textvariable=textvariable, width=width, font=FONT_BODY,
                     bg=SURFACE, fg=BLACK, insertbackground=BLACK,
-                    highlightbackground=BLACK, highlightthickness=BORDER_WIDTH,
+                    highlightbackground=BLACK, highlightcolor=PURPLE, highlightthickness=BORDER_WIDTH,
                     relief="flat", **kw)
 
 
@@ -182,7 +252,7 @@ class YTDownloaderApp:
     def __init__(self, root):
         self.root = root
         root.title("NEO YT DOWNLOADER")
-        root.geometry("760x780")
+        root.geometry("760x800")
         root.configure(bg=BG)
         root.resizable(False, False)
 
@@ -217,20 +287,27 @@ class YTDownloaderApp:
                         font=FONT_BODY_B)
         style.map("Neo.TCheckbutton", background=[("active", SURFACE)])
         style.configure("Neo.TCombobox", fieldbackground=SURFACE, background=SURFACE,
-                        foreground=BLACK, font=FONT_BODY)
+                        foreground=BLACK, font=FONT_BODY, arrowsize=14, padding=4)
+        style.map("Neo.TCombobox", fieldbackground=[("readonly", SURFACE)],
+                  selectbackground=[("readonly", SURFACE)],
+                  selectforeground=[("readonly", BLACK)])
 
     def _card(self, parent):
         return tk.Frame(parent, bg=SURFACE, highlightbackground=BLACK,
                         highlightthickness=BORDER_WIDTH)
 
     def _build_ui(self):
-        header = tk.Frame(self.root, bg=BLACK, height=70)
+        header = tk.Frame(self.root, bg=BLACK, height=74)
         header.pack(fill="x")
         header.pack_propagate(False)
-        tk.Label(header, text="NEO YT DOWNLOADER", font=FONT_TITLE,
-                 bg=BLACK, fg=YELLOW).pack(side="left", padx=20, pady=10)
-        tk.Label(header, text="paste. fetch. smash download.", font=("Arial", 10, "italic"),
-                 bg=BLACK, fg="#DDDDDD").pack(side="left", pady=10)
+        title_row = tk.Frame(header, bg=BLACK)
+        title_row.pack(side="left", padx=20, pady=(14, 0))
+        tk.Label(title_row, text="NEO YT DOWNLOADER", font=FONT_TITLE,
+                 bg=BLACK, fg=YELLOW).pack(anchor="w")
+        tk.Label(header, text="paste. fetch. smash download.", font=(FONT_BODY[0], 10, "italic"),
+                 bg=BLACK, fg="#CFCFCF").pack(side="left", pady=(28, 0), padx=(4, 0))
+        # thin accent underline for a bit of visual polish
+        tk.Frame(self.root, bg=PINK, height=4).pack(fill="x")
 
         body = tk.Frame(self.root, bg=BG)
         body.pack(fill="both", expand=True, padx=20, pady=15)
@@ -241,26 +318,27 @@ class YTDownloaderApp:
         neo_label(url_card, "VIDEO / PLAYLIST URL", font=FONT_HEAD).pack(anchor="w", padx=14, pady=(12, 4))
         row = tk.Frame(url_card, bg=SURFACE)
         row.pack(fill="x", padx=14, pady=(0, 12))
-        neo_entry(row, textvariable=self.url_var, width=42).pack(side="left", fill="x", expand=True, ipady=6)
-        NeoButton(row, "PASTE", command=self._paste_clipboard, bg=BLUE,
-                  width=90, height=36).pack(side="left", padx=(8, 0))
+        neo_entry(row, textvariable=self.url_var, width=42).pack(side="left", fill="x", expand=True, ipady=7)
+        NeoButton(row, "PASTE", command=self._paste_clipboard, bg=BLUE, hover_bg=BLUE_DARK,
+                  width=90, height=38).pack(side="left", padx=(8, 0))
         NeoButton(row, "FETCH INFO", command=self._fetch_info_thread, bg=PURPLE, fg="white",
-                  width=140, height=36).pack(side="left", padx=(8, 0))
+                  hover_bg=PURPLE_DARK, width=140, height=38).pack(side="left", padx=(8, 0))
 
         # Info card
         self.info_card = self._card(body)
         self.info_card.pack(fill="x", pady=(0, 12))
         info_inner = tk.Frame(self.info_card, bg=SURFACE)
         info_inner.pack(fill="x", padx=14, pady=12)
-        self.thumb_label = tk.Label(info_inner, bg="#DDDDDD", width=20, height=6)
+        self.thumb_label = tk.Label(info_inner, bg="#E4E4E4", width=20, height=6,
+                                    highlightbackground=BLACK, highlightthickness=2)
         self.thumb_label.pack(side="left")
         text_col = tk.Frame(info_inner, bg=SURFACE)
         text_col.pack(side="left", fill="x", expand=True, padx=(14, 0))
         self.title_label = neo_label(text_col, "No video loaded yet — paste a link and hit FETCH INFO",
                                      font=FONT_BODY_B)
         self.title_label.pack(anchor="w")
-        self.meta_label = neo_label(text_col, "", fg="#555555")
-        self.meta_label.pack(anchor="w", pady=(4, 0))
+        self.meta_label = neo_label(text_col, "", font=FONT_SMALL, fg=MUTED)
+        self.meta_label.pack(anchor="w", pady=(5, 0))
 
         # Options card
         opt_card = self._card(body)
@@ -280,7 +358,7 @@ class YTDownloaderApp:
         neo_label(qrow, "Quality:", font=FONT_BODY_B).pack(side="left")
         self.quality_menu = ttk.Combobox(qrow, textvariable=self.quality_var,
                                          values=["Best available"], state="readonly",
-                                         style="Neo.TCombobox", width=16)
+                                         style="Neo.TCombobox", width=16, font=FONT_BODY)
         self.quality_menu.pack(side="left", padx=(10, 20))
         ttk.Checkbutton(qrow, text="Download entire playlist", variable=self.playlist_var,
                         style="Neo.TCheckbutton").pack(side="left")
@@ -288,19 +366,20 @@ class YTDownloaderApp:
         drow = tk.Frame(opt_card, bg=SURFACE)
         drow.pack(fill="x", padx=14, pady=(4, 12))
         neo_label(drow, "Save to:", font=FONT_BODY_B).pack(side="left")
-        self.dir_label = neo_label(drow, self._short_path(self.download_dir.get()))
+        self.dir_label = neo_label(drow, self._short_path(self.download_dir.get()), font=FONT_BODY, fg=MUTED)
         self.dir_label.pack(side="left", padx=(10, 10))
-        NeoButton(drow, "CHANGE", command=self._choose_dir, bg=YELLOW,
-                  width=90, height=32, font=("Arial", 9, "bold")).pack(side="left")
+        NeoButton(drow, "CHANGE", command=self._choose_dir, bg=YELLOW, hover_bg=YELLOW_DARK,
+                  width=90, height=32, font=FONT_SMALL_B).pack(side="left")
 
         # Action row
         action_row = tk.Frame(body, bg=BG)
         action_row.pack(fill="x", pady=(0, 12))
         self.download_btn = NeoButton(action_row, "DOWNLOAD NOW", command=self._start_download,
-                                      bg=GREEN, width=220, height=52, font=("Arial Black", 13))
+                                      bg=GREEN, hover_bg=GREEN_DARK, width=220, height=52,
+                                      font=(FONT_TITLE[0], 13, "bold"))
         self.download_btn.pack(side="left")
         self.cancel_btn = NeoButton(action_row, "CANCEL", command=self._cancel_download,
-                                    bg=RED, fg="white", width=140, height=52)
+                                    bg=RED, fg="white", hover_bg=RED_DARK, width=140, height=52)
         self.cancel_btn.pack(side="left", padx=(10, 0))
         self.cancel_btn.set_enabled(False)
 
@@ -311,7 +390,7 @@ class YTDownloaderApp:
         pinner.pack(fill="x", padx=14, pady=12)
         self.progress_bar = NeoProgressBar(pinner, width=690)
         self.progress_bar.pack(fill="x")
-        self.status_label = neo_label(pinner, "Idle — waiting for a link.", fg="#555555")
+        self.status_label = neo_label(pinner, "Idle — waiting for a link.", font=FONT_SMALL, fg=MUTED)
         self.status_label.pack(anchor="w", pady=(8, 0))
 
         # History card
@@ -320,13 +399,14 @@ class YTDownloaderApp:
         hrow = tk.Frame(hist_card, bg=SURFACE)
         hrow.pack(fill="x", padx=14, pady=(12, 4))
         neo_label(hrow, "DOWNLOAD HISTORY", font=FONT_HEAD).pack(side="left")
-        NeoButton(hrow, "OPEN FOLDER", command=self._open_download_folder, bg=BLUE,
-                  width=130, height=30, font=("Arial", 9, "bold")).pack(side="right")
+        NeoButton(hrow, "OPEN FOLDER", command=self._open_download_folder, bg=BLUE, hover_bg=BLUE_DARK,
+                  width=130, height=30, font=FONT_SMALL_B).pack(side="right")
         list_frame = tk.Frame(hist_card, bg=SURFACE)
         list_frame.pack(fill="both", expand=True, padx=14, pady=(4, 12))
         self.history_list = tk.Listbox(list_frame, font=FONT_MONO, bg="#FAFAFA",
                                        highlightbackground=BLACK, highlightthickness=2,
-                                       relief="flat", height=6)
+                                       relief="flat", height=6, selectbackground=YELLOW,
+                                       selectforeground=BLACK)
         self.history_list.pack(fill="both", expand=True)
         self._refresh_history_ui()
 
@@ -587,6 +667,7 @@ def main():
     if yt_dlp is None:
         print("yt-dlp not found. Install with: pip install yt-dlp")
     root = tk.Tk()
+    setup_fonts()  # must run after root exists — font.families() needs a Tk instance
     YTDownloaderApp(root)
     root.mainloop()
 
