@@ -1,0 +1,22 @@
+# Python junk
+__pycache__/
+*.pyc
+*.pyo
+venv/
+env/
+.venv/
+
+# editor stuff
+.vscode/
+.idea/
+*.swp
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# just in case anyone runs it from inside the repo folder
+*.mp4
+*.mp3
+*.webm
+*.mkv
